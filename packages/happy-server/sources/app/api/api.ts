@@ -126,33 +126,36 @@ export async function startApi(opts: StartApiOptions = {}) {
             // SPA fallback — if file not found, serve index.html
             wildcard: false,
         });
-        if (injectScript) {
-            app.addHook('onSend', async (request, reply, payload) => {
-                const url = request.raw.url || '';
-                const isIndex = url === '/' || url === '/index.html' || url.startsWith('/?');
-                if (!isIndex) return payload;
-                const contentType = reply.getHeader('content-type');
-                if (typeof contentType !== 'string' || !contentType.includes('text/html')) return payload;
-                let html: string;
-                if (typeof payload === 'string') {
-                    html = payload;
-                } else if (Buffer.isBuffer(payload)) {
-                    html = payload.toString('utf8');
-                } else if (payload && typeof (payload as any).pipe === 'function') {
-                    // stream — read it
-                    const chunks: Buffer[] = [];
-                    for await (const chunk of payload as any) {
-                        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-                    }
-                    html = Buffer.concat(chunks).toString('utf8');
-                } else {
-                    return payload;
+        // Always add onSend hook to inject config script and server validation marker
+        app.addHook('onSend', async (request, reply, payload) => {
+            const url = request.raw.url || '';
+            const isIndex = url === '/' || url === '/index.html' || url.startsWith('/?');
+            if (!isIndex) return payload;
+            const contentType = reply.getHeader('content-type');
+            if (typeof contentType !== 'string' || !contentType.includes('text/html')) return payload;
+            let html: string;
+            if (typeof payload === 'string') {
+                html = payload;
+            } else if (Buffer.isBuffer(payload)) {
+                html = payload.toString('utf8');
+            } else if (payload && typeof (payload as any).pipe === 'function') {
+                // stream — read it
+                const chunks: Buffer[] = [];
+                for await (const chunk of payload as any) {
+                    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
                 }
-                const injected = html.replace(/<head[^>]*>/i, (m) => `${m}\n${injectScript}`);
-                reply.header('content-length', Buffer.byteLength(injected));
-                return injected;
-            });
-        }
+                html = Buffer.concat(chunks).toString('utf8');
+            } else {
+                return payload;
+            }
+            if (injectScript) {
+                html = html.replace(/<head[^>]*>/i, (m) => `${m}\n${injectScript}`);
+            }
+            // Append validation marker so mobile app can verify this is a Happy server
+            html = html.replace('</body>', '<!-- Welcome to Happy Server! --></body>');
+            reply.header('content-length', Buffer.byteLength(html));
+            return html;
+        });
         // SPA fallback: serve index.html for any unmatched GET that looks like a route.
         app.setNotFoundHandler(async (request, reply) => {
             const url = request.raw.url || '';

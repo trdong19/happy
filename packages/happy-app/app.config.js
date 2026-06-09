@@ -132,6 +132,7 @@ export default {
             favicon: "./sources/assets/images/favicon.png"
         },
         plugins: [
+            require("./plugins/withCleartextTraffic.js"),
             require("./plugins/withEinkCompatibility.js"),
             [
                 "expo-router",
